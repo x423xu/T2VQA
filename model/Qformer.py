@@ -1,11 +1,11 @@
 """
- * Copyright (c) 2023, salesforce.com, inc.
- * All rights reserved.
- * SPDX-License-Identifier: BSD-3-Clause
- * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
- * By Junnan Li
- * Based on huggingface code base
- * https://github.com/huggingface/transformers/blob/v4.15.0/src/transformers/models/bert
+* Copyright (c) 2023, salesforce.com, inc.
+* All rights reserved.
+* SPDX-License-Identifier: BSD-3-Clause
+* For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
+* By Junnan Li
+* Based on huggingface code base
+* https://github.com/huggingface/transformers/blob/v4.15.0/src/transformers/models/bert
 """
 
 import math
@@ -247,7 +247,13 @@ class BertSelfAttention(nn.Module):
             attention_scores = attention_scores + attention_mask
 
         # Normalize the attention scores to probabilities.
+        if torch.isnan(attention_scores).any():
+            raise ValueError("NaN detected in attention scores of Qformer.")
+        attention_scores = (
+            attention_scores - attention_scores.max(dim=-1, keepdim=True)[0]
+        )
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
+        # attention_probs = attention_scores
 
         if is_cross_attention and self.save_attention:
             self.save_attention_map(attention_probs)

@@ -11,6 +11,7 @@ warnings.filterwarnings("ignore")
 from model.vit import VisionTransformer, interpolate_pos_embed
 from model.med import BertConfig, BertModel, BertLMHeadModel
 from transformers import BertTokenizer
+# from transformers import AutoTokenizer, AutoModelForMaskedLM
 
 import torch
 from torch import nn
@@ -184,7 +185,8 @@ def blip_feature_extractor(pretrained='',**kwargs):
     return model        
 
 def init_tokenizer():
-    tokenizer = BertTokenizer.from_pretrained('/home/tengchuan/T2VQA/bert-base-uncased')
+    # tokenizer = AutoTokenizer.from_pretrained("google-bert/bert-base-uncased")
+    tokenizer = BertTokenizer.from_pretrained('/SSD_zfs/xxy/code/Visual-Consistency-Assessment-for-AIGC-Videos/weights/bert-base-uncased')
     tokenizer.add_special_tokens({'bos_token':'[DEC]'})
     tokenizer.add_special_tokens({'additional_special_tokens':['[ENC]']})       
     tokenizer.enc_token_id = tokenizer.additional_special_tokens_ids[0]  

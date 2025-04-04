@@ -13,9 +13,9 @@ data:
     t2v:
         type: T2VDataset
         args:
-            phase: test
-            anno_file: /home/tengchuan/T2VQA/configs/database_standard_16.6_50.txt
-            data_prefix: /home/tengchuan/database/T2Vdata
+            phase: train
+            anno_file: /SSD_zfs/xxy/data/t2vqa/T2VQA_DB_info.txt
+            data_prefix: /SSD_zfs/xxy/data/t2vqa/T2VQA-DB
             size: 224
             clip_len: 8
             frame_interval: 2
@@ -24,16 +24,16 @@ data:
 
 model:
     args:
-        med_config: '/home/tengchuan/T2VQA/configs/med_config.json'
+        med_config: '/SSD_zfs/xxy/code/Visual-Consistency-Assessment-for-AIGC-Videos/T2VQA/med_config.json'
         image_size: 224
         nhead: 8
         dropout: 0.1
         nlayers: 6
         embed_dim: 256 
-        llm_model: /home/tengchuan/T2VQA/vicuna-7b-v1.1
-        blip_weights: /home/tengchuan/T2VQA/pretrained_weights/model_large.pth
-        swin_weights: /home/tengchuan/T2VQA/pretrained_weights/swin_tiny_patch244_window877_kinetics400_1k.pth
-        bert_weights: /home/tengchuan/T2VQA/bert-base-uncased
+        llm_model: /SSD_zfs/xxy/code/Visual-Consistency-Assessment-for-AIGC-Videos/weights/vicuna-7b-v1.5/
+        blip_weights: /SSD_zfs/xxy/code/Visual-Consistency-Assessment-for-AIGC-Videos/weights/model_large.pth
+        swin_weights: /SSD_zfs/xxy/code/Visual-Consistency-Assessment-for-AIGC-Videos/weights/swin_tiny_patch244_window877_kinetics400_1k.pth
+        bert_weights: /SSD_zfs/xxy/code/Visual-Consistency-Assessment-for-AIGC-Videos/weights/bert-base-uncased/
         
             
 optimizer:
@@ -41,7 +41,7 @@ optimizer:
     wd: 0.05
         
 
-test_load_path: /home/tengchuan/T2VQA/pretrained_weights/T2VQA_final_head_t2v_0_eval_s_finetuned.pth
+# test_load_path: /home/tengchuan/T2VQA/pretrained_weights/T2VQA_final_head_t2v_0_eval_s_finetuned.pth
 
     
         

@@ -1,4 +1,8 @@
 import torch
+import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# torch.autograd.set_detect_anomaly(True)
 
 import cv2
 import random
@@ -21,6 +25,7 @@ import copy
 from model.model import T2VQA
 from dataset.dataset import T2VDataset
 
+
 def train_test_split(dataset_path, ann_file, ratio=0.8, seed=42):
     random.seed(seed)
     print(seed)
@@ -38,6 +43,7 @@ def train_test_split(dataset_path, ann_file, ratio=0.8, seed=42):
         video_infos[int(ratio * len(video_infos)) :],
     )
 
+
 def plcc_loss(y_pred, y):
     sigma_hat, m_hat = torch.std_mean(y_pred, unbiased=False)
     y_pred = (y_pred - m_hat) / (sigma_hat + 1e-8)
@@ -48,6 +54,7 @@ def plcc_loss(y_pred, y):
     loss1 = torch.nn.functional.mse_loss(rho * y_pred, y) / 4
     return ((loss0 + loss1) / 2).float()
 
+
 def rank_loss(y_pred, y):
     ranking_loss = torch.nn.functional.relu(
         (y_pred - y_pred.t()) * torch.sign((y.t() - y))
@@ -57,6 +64,7 @@ def rank_loss(y_pred, y):
         torch.sum(ranking_loss) / y_pred.shape[0] / (y_pred.shape[0] - 1) / scale
     ).float()
 
+
 def rescale(pr, gt=None):
 
     if gt is None:
@@ -65,13 +73,9 @@ def rescale(pr, gt=None):
         pr = ((pr - np.mean(pr)) / np.std(pr)) * np.std(gt) + np.mean(gt)
     return pr
 
+
 def finetune_epoch(
-    ft_loader,
-    model,
-    optimizer,
-    scheduler,
-    device,
-    epoch=-1,
+    ft_loader, model, optimizer, scheduler, device, epoch=-1, scaler=None
 ):
     model.train()
     for i, data in enumerate(tqdm(ft_loader, desc=f"Training in epoch {epoch}")):
@@ -82,11 +86,11 @@ def finetune_epoch(
 
         y = data["gt_label"].float().detach().to(device)
 
-        caption = data['prompt']
-        
-        prompt = 'Please assess the quality of this video'
+        caption = data["prompt"]
 
-        scores = model(video, caption = caption, prompt = prompt)
+        prompt = "Please assess the quality of this video"
+        scores = model(video, caption=caption, prompt=prompt)
+        print(scores)
 
         y_pred = scores
         # if len(scores) > 1:
@@ -97,16 +101,34 @@ def finetune_epoch(
 
         p_loss = plcc_loss(y_pred, y)
         r_loss = rank_loss(y_pred, y)
+        # r_loss = 0
 
         loss = p_loss + 0.3 * r_loss
 
-        loss.backward()
-        optimizer.step()
+        if scaler is not None:
+            scaler.scale(loss).backward()
+
+            for name, param in model.named_parameters():
+                if param.grad is not None and torch.isnan(param.grad).any():
+                    print(f"NaN in gradients of {name}!")
+            raise "NaN in gradients!"
+
+            scaler.unscale_(optimizer)  # Unscale gradients (required before clipping)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            scaler.step(
+                optimizer
+            )  # Step with scaled gradients (automatically unscales)
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
+        optimizer.zero_grad()
         scheduler.step()
 
         # ft_loader.dataset.refresh_hypers()
 
     model.eval()
+
 
 def inference_set(
     inf_loader,
@@ -127,17 +149,19 @@ def inference_set(
         result = dict()
         video, video_up = {}, {}
 
-        video['video'] = data['video'].to(device)
-        
+        video["video"] = data["video"].to(device)
+
         ## Reshape into clips
-        b, c, t, h, w = video['video'].shape
-            
+        b, c, t, h, w = video["video"].shape
+
         with torch.no_grad():
-            prompt = 'Please assess the quality of this video'
+            prompt = "Please assess the quality of this video"
 
-            caption = data['prompt']
+            caption = data["prompt"]
 
-            result["pr_labels"] = model(video, caption = caption, prompt = prompt).cpu().numpy()
+            result["pr_labels"] = (
+                model(video, caption=caption, prompt=prompt).cpu().numpy()
+            )
 
             if len(list(video_up.keys())) > 0:
                 result["pr_labels_up"] = model(video_up).cpu().numpy()
@@ -174,16 +198,22 @@ def inference_set(
         if save_type == "head":
             head_state_dict = OrderedDict()
             for key, v in state_dict.items():
-                if "finetune" in key or "swin" in key or 'blip.text_encoder' in key:
+                if "finetune" in key or "swin" in key or "blip.text_encoder" in key:
                     head_state_dict[key] = v
             print("Following keys are saved (for head-only):", head_state_dict.keys())
             torch.save(
-                {"state_dict": head_state_dict, "validation_results": best_,},
+                {
+                    "state_dict": head_state_dict,
+                    "validation_results": best_,
+                },
                 f"pretrained_weights/{save_name}_{suffix}_finetuned.pth",
             )
         else:
             torch.save(
-                {"state_dict": state_dict, "validation_results": best_,},
+                {
+                    "state_dict": state_dict,
+                    "validation_results": best_,
+                },
                 f"pretrained_weights/{save_name}_{suffix}_finetuned.pth",
             )
 
@@ -193,7 +223,6 @@ def inference_set(
         max(best_k, k),
         min(best_r, r),
     )
-
 
     print(
         f"For {len(inf_loader)} videos, \nthe accuracy of the model: [{suffix}] is as follows:\n  SROCC: {s:.4f} best: {best_s:.4f} \n  PLCC:  {p:.4f} best: {best_p:.4f}  \n  KROCC: {k:.4f} best: {best_k:.4f} \n  RMSE:  {r:.4f} best: {best_r:.4f}."
@@ -251,9 +280,7 @@ def main():
         train_datasets = {}
         for key in opt["data"]:
             if key.startswith("train"):
-                train_dataset = T2VDataset(
-                    opt["data"][key]["args"]
-                )
+                train_dataset = T2VDataset(opt["data"][key]["args"])
                 train_datasets[key] = train_dataset
                 print(len(train_dataset.video_infos))
 
@@ -269,9 +296,7 @@ def main():
         val_datasets = {}
         for key in opt["data"]:
             if key.startswith("eval"):
-                val_dataset = T2VDataset(
-                    opt["data"][key]["args"]
-                )
+                val_dataset = T2VDataset(opt["data"][key]["args"])
                 print(len(val_dataset.video_infos))
                 val_datasets[key] = val_dataset
 
@@ -287,13 +312,10 @@ def main():
         param_groups = []
 
         for name, param in model.named_parameters():
-            
-            if "finetune" in name or "swin" in name or 'blip.text_encoder' in name:
-                
-                param_groups += [
-                        {"params": param, "lr": opt["optimizer"]["lr"]}
-                ]
 
+            if "finetune" in name or "swin" in name or "blip.text_encoder" in name:
+
+                param_groups += [{"params": param, "lr": opt["optimizer"]["lr"]}]
 
         optimizer = torch.optim.AdamW(
             lr=opt["optimizer"]["lr"],
@@ -304,18 +326,24 @@ def main():
         for train_loader in train_loaders.values():
             warmup_iter += int(opt["warmup_epochs"] * len(train_loader))
         max_iter = int((opt["num_epochs"]) * len(train_loader))
-        lr_lambda = (
-            lambda cur_iter: cur_iter / warmup_iter
+        lr_lambda = lambda cur_iter: (
+            cur_iter / warmup_iter
             if cur_iter <= warmup_iter
             else 0.5 * (1 + math.cos(math.pi * (cur_iter - warmup_iter) / max_iter))
         )
 
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda,)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lr_lambda=lr_lambda,
+        )
 
         bests = {}
         for key in val_loaders:
             bests[key] = -1, -1, -1, 1000
-        
+        # with open("log_model.txt", "w") as f:
+        #     f.write(str(model))
+        scaler = torch.cuda.amp.GradScaler()
+
         for epoch in range(opt["num_epochs"]):
             print(f"End-to-end Epoch {epoch}:")
             for key, train_loader in train_loaders.items():
@@ -326,6 +354,7 @@ def main():
                     scheduler,
                     device,
                     epoch,
+                    scaler=scaler,
                 )
             for key in val_loaders:
                 bests[key] = inference_set(
@@ -349,7 +378,6 @@ def main():
                     KROCC: {bests[key][2]:.4f}
                     RMSE:  {bests[key][3]:.4f}."""
                 )
-
 
         for key, value in dict(model.named_children()).items():
             if "finetune" in key or "swin" in key:

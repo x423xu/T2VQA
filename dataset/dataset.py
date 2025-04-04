@@ -117,11 +117,13 @@ class T2VDataset(Dataset):
         else:
             with open(self.ann_file, "r") as fin:
                 for line in fin:
-                    line_split = line.strip().split("|")
+                    line_split = line.strip().split("|") # video_path|prompt|label
                     filename, prompt, label = line_split
                     label = float(label)
                     filename = os.path.join(self.data_prefix, filename)
                     self.video_infos.append(dict(filename=filename, prompt=prompt, label=label))
+                video_len = len(self.video_infos)
+                print(f"Found {video_len} videos in {self.ann_file}")
 
     def __len__(self):
         
